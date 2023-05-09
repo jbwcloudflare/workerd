@@ -135,12 +135,12 @@ kj::Promise<void> WorkerQueue::sendBatch(
   }).attach(kj::mv(client));
 };
 
-v8::Local<v8::Value> deserialize(v8::Isolate* isolate, auto body, const kj::String& format) {
+jsg::Value deserialize(v8::Isolate* isolate, kj::Array<kj::byte>body, const kj::String& format) {
   if (format == "raw") {
-    jsg::ByteString(kj::mv(body));
-    // how can I create a v8::Local<v8::Value> (or just a jsg::Value) from this?
+    return jsg::Value(isolate, v8::Undefined(isolate));
   }
-  return jsg::Deserializer(isolate, kj::mv(body)).readValue();
+
+  return jsg::Value(isolate, jsg::Deserializer(isolate, kj::mv(body)).readValue());
 }
 
 v8::Local<v8::Value> deserialize(v8::Isolate* isolate, rpc::QueueMessage::Reader message) {
@@ -160,7 +160,7 @@ QueueMessage::QueueMessage(
     v8::Isolate* isolate, IncomingQueueMessage message, IoPtr<QueueEventResult> result)
     : id(kj::mv(message.id)),
       timestamp(message.timestamp),
-      body(isolate, deserialize(isolate, kj::mv(message.body), message.format)),
+      body(deserialize(isolate, kj::mv(message.body), message.format)),
       result(result) {}
 
 jsg::Value QueueMessage::getBody(jsg::Lock& js) {
