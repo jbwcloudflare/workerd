@@ -1,4 +1,5 @@
 #include "queue.h"
+#include "src/workerd/jsg/jsg.h"
 
 #include <workerd/jsg/ser.h>
 #include <workerd/api/global-scope.h>
@@ -134,11 +135,23 @@ kj::Promise<void> WorkerQueue::sendBatch(
   }).attach(kj::mv(client));
 };
 
+v8::Local<v8::Value> deserialize(v8::Isolate* isolate, auto body, const kj::String& format) {
+  if (format == "raw") {
+    jsg::ByteString(kj::mv(body));
+    // how can I create a v8::Local<v8::Value> (or just a jsg::Value) from this?
+  }
+  return jsg::Deserializer(isolate, kj::mv(body)).readValue();
+}
+
+v8::Local<v8::Value> deserialize(v8::Isolate* isolate, rpc::QueueMessage::Reader message) {
+  return jsg::Deserializer(isolate, message.getData()).readValue();
+}
+
 QueueMessage::QueueMessage(
     v8::Isolate* isolate, rpc::QueueMessage::Reader message, IoPtr<QueueEventResult> result)
     : id(kj::str(message.getId())),
       timestamp(message.getTimestampNs() * kj::NANOSECONDS + kj::UNIX_EPOCH),
-      body(isolate, jsg::Deserializer(isolate, message.getData()).readValue()),
+      body(isolate, deserialize(isolate, message)),
       result(result) {}
 // Note that we must make deep copies of all data here since the incoming Reader may be
 // deallocated while JS's GC wrappers still exist.
@@ -147,7 +160,7 @@ QueueMessage::QueueMessage(
     v8::Isolate* isolate, IncomingQueueMessage message, IoPtr<QueueEventResult> result)
     : id(kj::mv(message.id)),
       timestamp(message.timestamp),
-      body(isolate, jsg::Deserializer(isolate, kj::mv(message.body)).readValue()),
+      body(isolate, deserialize(isolate, kj::mv(message.body), message.format)),
       result(result) {}
 
 jsg::Value QueueMessage::getBody(jsg::Lock& js) {
