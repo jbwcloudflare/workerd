@@ -143,15 +143,19 @@ jsg::Value deserialize(v8::Isolate* isolate, kj::Array<kj::byte>body, const kj::
   return jsg::Value(isolate, jsg::Deserializer(isolate, kj::mv(body)).readValue());
 }
 
-v8::Local<v8::Value> deserialize(v8::Isolate* isolate, rpc::QueueMessage::Reader message) {
-  return jsg::Deserializer(isolate, message.getData()).readValue();
+jsg::Value deserialize(v8::Isolate* isolate, rpc::QueueMessage::Reader message) {
+  if (message.getFormat() == "raw") {
+    return jsg::Value(isolate, v8::Undefined(isolate));
+
+  }
+  return jsg::Value(isolate, jsg::Deserializer(isolate, message.getData()).readValue());
 }
 
 QueueMessage::QueueMessage(
     v8::Isolate* isolate, rpc::QueueMessage::Reader message, IoPtr<QueueEventResult> result)
     : id(kj::str(message.getId())),
       timestamp(message.getTimestampNs() * kj::NANOSECONDS + kj::UNIX_EPOCH),
-      body(isolate, deserialize(isolate, message)),
+      body(deserialize(isolate, message)),
       result(result) {}
 // Note that we must make deep copies of all data here since the incoming Reader may be
 // deallocated while JS's GC wrappers still exist.
