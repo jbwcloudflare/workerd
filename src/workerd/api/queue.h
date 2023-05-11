@@ -103,12 +103,12 @@ struct QueueEventResult {
 
 class QueueMessage final: public jsg::Object {
 public:
-  QueueMessage(v8::Isolate* isolate, rpc::QueueMessage::Reader message, IoPtr<QueueEventResult> result);
-  QueueMessage(v8::Isolate* isolate, IncomingQueueMessage message, IoPtr<QueueEventResult> result);
+  QueueMessage(jsg::Lock& js, rpc::QueueMessage::Reader message, IoPtr<QueueEventResult> result);
+  QueueMessage(jsg::Lock& js, IncomingQueueMessage message, IoPtr<QueueEventResult> result);
 
   kj::StringPtr getId() { return id; }
   kj::Date getTimestamp() { return timestamp; }
-  jsg::Value getBody(jsg::Lock& js);
+  kj::OneOf<jsg::Value, kj::String> getBody(jsg::Lock& js);
 
   void retry();
   void ack();
@@ -147,8 +147,8 @@ public:
     kj::Array<IncomingQueueMessage> messages;
   };
 
-  explicit QueueEvent(v8::Isolate* isolate, rpc::EventDispatcher::QueueParams::Reader params, IoPtr<QueueEventResult> result);
-  explicit QueueEvent(v8::Isolate* isolate, Params params, IoPtr<QueueEventResult> result);
+  explicit QueueEvent(jsg::Lock& js, rpc::EventDispatcher::QueueParams::Reader params, IoPtr<QueueEventResult> result);
+  explicit QueueEvent(jsg::Lock& js, Params params, IoPtr<QueueEventResult> result);
 
   static jsg::Ref<QueueEvent> constructor(kj::String type) = delete;
 

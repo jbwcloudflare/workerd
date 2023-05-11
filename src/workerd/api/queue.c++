@@ -135,39 +135,40 @@ kj::Promise<void> WorkerQueue::sendBatch(
   }).attach(kj::mv(client));
 };
 
-jsg::Value deserialize(v8::Isolate* isolate, kj::Array<kj::byte>body, const kj::String& format) {
+jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, const kj::String& format) {
   if (format == "raw") {
-    return jsg::Value(isolate, v8::Undefined(isolate));
+    return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
 
-  return jsg::Value(isolate, jsg::Deserializer(isolate, kj::mv(body)).readValue());
+  return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
 }
 
-jsg::Value deserialize(v8::Isolate* isolate, rpc::QueueMessage::Reader message) {
+jsg::Value deserialize(jsg::Lock& js, rpc::QueueMessage::Reader message) {
   if (message.getFormat() == "raw") {
-    return jsg::Value(isolate, v8::Undefined(isolate));
+    auto bytes = kj::heapArray(message.getData().asBytes());
+    return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(bytes)));
 
   }
-  return jsg::Value(isolate, jsg::Deserializer(isolate, message.getData()).readValue());
+  return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, message.getData()).readValue());
 }
 
 QueueMessage::QueueMessage(
-    v8::Isolate* isolate, rpc::QueueMessage::Reader message, IoPtr<QueueEventResult> result)
+    jsg::Lock& js, rpc::QueueMessage::Reader message, IoPtr<QueueEventResult> result)
     : id(kj::str(message.getId())),
       timestamp(message.getTimestampNs() * kj::NANOSECONDS + kj::UNIX_EPOCH),
-      body(deserialize(isolate, message)),
+      body(deserialize(js, message)),
       result(result) {}
 // Note that we must make deep copies of all data here since the incoming Reader may be
 // deallocated while JS's GC wrappers still exist.
 
 QueueMessage::QueueMessage(
-    v8::Isolate* isolate, IncomingQueueMessage message, IoPtr<QueueEventResult> result)
+    jsg::Lock& js, IncomingQueueMessage message, IoPtr<QueueEventResult> result)
     : id(kj::mv(message.id)),
       timestamp(message.timestamp),
-      body(deserialize(isolate, kj::mv(message.body), message.format)),
+      body(deserialize(js, kj::mv(message.body), message.format)),
       result(result) {}
 
-jsg::Value QueueMessage::getBody(jsg::Lock& js) {
+kj::OneOf<jsg::Value, kj::String> QueueMessage::getBody(jsg::Lock& js) {
   return body.addRef(js);
 }
 
@@ -217,23 +218,23 @@ void QueueMessage::ack() {
   result->explicitAcks.findOrCreate(id, [this]() { return kj::heapString(id); } );
 }
 
-QueueEvent::QueueEvent(v8::Isolate* isolate, rpc::EventDispatcher::QueueParams::Reader params, IoPtr<QueueEventResult> result)
+QueueEvent::QueueEvent(jsg::Lock& js, rpc::EventDispatcher::QueueParams::Reader params, IoPtr<QueueEventResult> result)
     : ExtendableEvent("queue"), queueName(kj::heapString(params.getQueueName())), result(result) {
   // Note that we must make deep copies of all data here since the incoming Reader may be
   // deallocated while JS's GC wrappers still exist.
   auto incoming = params.getMessages();
   auto messagesBuilder = kj::heapArrayBuilder<jsg::Ref<QueueMessage>>(incoming.size());
   for (auto i: kj::indices(incoming)) {
-    messagesBuilder.add(jsg::alloc<QueueMessage>(isolate, incoming[i], result));
+    messagesBuilder.add(jsg::alloc<QueueMessage>(js, incoming[i], result));
   }
   messages = messagesBuilder.finish();
 }
 
-QueueEvent::QueueEvent(v8::Isolate* isolate, Params params, IoPtr<QueueEventResult> result)
+QueueEvent::QueueEvent(jsg::Lock& js, Params params, IoPtr<QueueEventResult> result)
     : ExtendableEvent("queue"), queueName(kj::mv(params.queueName)), result(result)  {
   auto messagesBuilder = kj::heapArrayBuilder<jsg::Ref<QueueMessage>>(params.messages.size());
   for (auto i: kj::indices(params.messages)) {
-    messagesBuilder.add(jsg::alloc<QueueMessage>(isolate, kj::mv(params.messages[i]), result));
+    messagesBuilder.add(jsg::alloc<QueueMessage>(js, kj::mv(params.messages[i]), result));
   }
   messages = messagesBuilder.finish();
 }
@@ -264,14 +265,14 @@ jsg::Ref<QueueEvent> startQueueEvent(
     IoPtr<QueueEventResult> result,
     Worker::Lock& lock, kj::Maybe<ExportedHandler&> exportedHandler,
     const jsg::TypeHandler<QueueExportedHandler>& handlerHandler) {
-  auto isolate = lock.getIsolate();
+  jsg::Lock& js = lock;
   jsg::Ref<QueueEvent> event(nullptr);
   KJ_SWITCH_ONEOF(params) {
     KJ_CASE_ONEOF(p, rpc::EventDispatcher::QueueParams::Reader) {
-      event = jsg::alloc<QueueEvent>(isolate, p, result);
+      event = jsg::alloc<QueueEvent>(js, p, result);
     }
     KJ_CASE_ONEOF(p, QueueEvent::Params) {
-      event = jsg::alloc<QueueEvent>(isolate, kj::mv(p), result);
+      event = jsg::alloc<QueueEvent>(js, kj::mv(p), result);
     }
   }
 
@@ -280,7 +281,7 @@ jsg::Ref<QueueEvent> startQueueEvent(
         lock, h->self.getHandle(lock.getIsolate())));
     KJ_IF_MAYBE(f, queueHandler.queue) {
       auto promise = (*f)(lock, jsg::alloc<QueueController>(event.addRef()),
-                          h->env.addRef(isolate), h->getCtx(isolate));
+                          h->env.addRef(js), h->getCtx(js.v8Isolate));
       event->waitUntil(kj::mv(promise));
     } else {
       lock.logWarningOnce(
