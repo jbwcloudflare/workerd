@@ -136,6 +136,7 @@ kj::Promise<void> WorkerQueue::sendBatch(
 };
 
 jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, const kj::String& format) {
+  js.logWarning(kj::str("format is: ", format));
   if (format == "raw") {
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
@@ -144,6 +145,8 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, const kj::String
 }
 
 jsg::Value deserialize(jsg::Lock& js, rpc::QueueMessage::Reader message) {
+  js.logWarning(kj::str("(rpc) format is: ", message.getFormat()));
+
   if (message.getFormat() == "raw") {
     auto bytes = kj::heapArray(message.getData().asBytes());
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(bytes)));
