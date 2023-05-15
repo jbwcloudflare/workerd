@@ -135,24 +135,30 @@ kj::Promise<void> WorkerQueue::sendBatch(
   }).attach(kj::mv(client));
 };
 
-jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, const kj::String& format) {
-  js.logWarning(kj::str("format is: ", format));
-  if (format == "raw") {
+jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::StringPtr> maybeFormat) {
+  auto fmt = maybeFormat.orDefault("v8"_kj);
+  if (fmt == "v8") {
+    return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
+  }
+  if (fmt == "raw") {
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
 
-  return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
+  KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
 }
 
 jsg::Value deserialize(jsg::Lock& js, rpc::QueueMessage::Reader message) {
-  js.logWarning(kj::str("(rpc) format is: ", message.getFormat()));
-
-  if (message.getFormat() == "raw") {
+  auto fmt = message.getFormat();
+  if (fmt == "" || fmt == "v8") {
+    // Default (empty string) implies v8 format
+    return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, message.getData()).readValue());
+  }
+  if (fmt == "raw") {
     auto bytes = kj::heapArray(message.getData().asBytes());
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(bytes)));
-
   }
-  return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, message.getData()).readValue());
+
+  KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
 }
 
 QueueMessage::QueueMessage(

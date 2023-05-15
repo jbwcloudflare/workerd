@@ -79,7 +79,7 @@ struct IncomingQueueMessage {
   kj::String id;
   kj::Date timestamp;
   kj::Array<kj::byte> body;
-  kj::String format;
+  kj::Maybe<kj::String> format;
   JSG_STRUCT(id, timestamp, body, format);
 };
 
