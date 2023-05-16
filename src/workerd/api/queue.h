@@ -30,13 +30,14 @@ public:
   struct SendOptions {
     // TODO(soon): Support metadata.
 
-    jsg::Optional<bool> tmp;
-    // TODO(soon): Remove this -- it's only here to make JSG_STRUCT work since it doesn't if a
-    // struct doesn't have any fields.
+    jsg::Optional<kj::String> contentType;
+    // contentType determines the serialization format of the message.
+    // TODO(now) validate type is supported at construction.
 
-    JSG_STRUCT(tmp);
+    JSG_STRUCT(contentType);
     JSG_STRUCT_TS_OVERRIDE(QueueSendOptions {
-      tmp: never;
+      body: Body;
+      contentType?: string;
     });
     // NOTE: Any new fields added here should also be added to MessageSendRequest below.
   };
@@ -44,15 +45,20 @@ public:
   struct MessageSendRequest {
     jsg::Value body;
 
+    jsg::Optional<kj::String> contentType;
+    // contentType determines the serialization format of the message.
+    // TODO(now) validate type is supported at construction.
+
     JSG_STRUCT(body);
     JSG_STRUCT_TS_OVERRIDE(MessageSendRequest<Body = unknown> {
       body: Body;
+      contentType?: string;
     });
     // NOTE: Any new fields added to SendOptions must also be added here.
   };
 
   kj::Promise<void> send(
-      v8::Local<v8::Value> body, jsg::Optional<SendOptions> options, v8::Isolate* isolate);
+      jsg::Lock& js, v8::Local<v8::Value> body, jsg::Optional<SendOptions> options);
 
   kj::Promise<void> sendBatch(jsg::Sequence<MessageSendRequest> batch, v8::Isolate* isolate);
 

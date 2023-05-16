@@ -8,30 +8,49 @@
 namespace workerd::api {
 
 kj::Promise<void> WorkerQueue::send(
-    v8::Local<v8::Value> body, jsg::Optional<SendOptions> options, v8::Isolate* isolate) {
+    jsg::Lock& js, v8::Local<v8::Value> body, jsg::Optional<SendOptions> options) {
   auto& context = IoContext::current();
 
   JSG_REQUIRE(!body->IsUndefined(), TypeError, "Message body cannot be undefined");
+  kj::Maybe<kj::StringPtr> contentType;
+  KJ_IF_MAYBE(opts, options) {
+    KJ_IF_MAYBE(type, opts->contentType) {
+      contentType = *type;
+    }
+  }
 
-  // Use a specific serialization version to avoid sending messages using a new version before all
-  // runtimes at the edge know how to read it.
-  jsg::Serializer serializer(isolate, jsg::Serializer::Options {
-    .version = 15,
-    .omitHeader = false,
-  });
-  serializer.write(body);
-  kj::Array<kj::byte> serialized = serializer.release().data;
+  kj::Array<kj::byte> serialized;
+  kj::ArrayPtr<kj::byte> s2;
+  auto headers = kj::HttpHeaders(context.getHeaderTable());
 
-  auto client = context.getHttpClient(subrequestChannel, true, nullptr, "queue_send"_kj);
+  KJ_IF_MAYBE(type, contentType) {
+    // TODO(now) switch on supported types, this assumes "raw" format for now
+    KJ_REQUIRE(body->IsArrayBuffer(), "expected array buffer");
+    jsg::BufferSource source(js, body);
+    s2 = source.asArrayPtr();
+
+    headers.set(kj::HttpHeaderId::CONTENT_TYPE, *type);
+  } else {
+    // Use a specific serialization version to avoid sending messages using a new version before all
+    // runtimes at the edge know how to read it.
+    jsg::Serializer serializer(js.v8Isolate, jsg::Serializer::Options {
+      .version = 15,
+      .omitHeader = false,
+    });
+    serializer.write(body);
+    serialized = serializer.release().data;
+    s2 = serialized;
+
+    headers.set(kj::HttpHeaderId::CONTENT_TYPE, "application/octet-stream");
+  }
 
   // The stage that we're sending a subrequest to provides a base URL that includes a scheme, the
   // queue broker's domain, and the start of the URL path including the account ID and queue ID. All
   // we have to do is provide the end of the path (which is "/message") to send a single message.
   kj::StringPtr url = "https://fake-host/message"_kj;
-  auto headers = kj::HttpHeaders(context.getHeaderTable());
-  headers.set(kj::HttpHeaderId::CONTENT_TYPE, "application/octet-stream");
-  auto req = client->request(kj::HttpMethod::POST, url, headers, serialized.size());
 
+  auto client = context.getHttpClient(subrequestChannel, true, nullptr, "queue_send"_kj);
+  auto req = client->request(kj::HttpMethod::POST, url, headers, serialized.size());
   return req.body->write(serialized.begin(), serialized.size())
       .attach(kj::mv(serialized), kj::mv(req.body), context.registerPendingEvent())
       .then([resp = kj::mv(req.response), &context]() mutable {
