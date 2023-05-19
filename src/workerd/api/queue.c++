@@ -7,27 +7,42 @@
 
 namespace workerd::api {
 
+kj::Maybe<kj::StringPtr> getContentType(const kj::Maybe<WorkerQueue::SendOptions>& options) {
+  KJ_IF_MAYBE(opts, options) {
+    KJ_IF_MAYBE(contentType, opts->contentType) {
+      auto validTypes = std::set<kj::StringPtr>{
+        "text/plain"_kj,
+        "application/octet-stream"_kj,
+        "application/json"_kj,
+        "application/v8"_kj,
+      };
+      JSG_REQUIRE(validTypes.contains(*contentType), TypeError, kj::str("Unsupported queue message content type: ",  *contentType));
+      return kj::StringPtr(*contentType);
+    }
+  }
+  return nullptr;
+}
+
 kj::Promise<void> WorkerQueue::send(
     jsg::Lock& js, v8::Local<v8::Value> body, jsg::Optional<SendOptions> options) {
   auto& context = IoContext::current();
 
   JSG_REQUIRE(!body->IsUndefined(), TypeError, "Message body cannot be undefined");
-  kj::Maybe<kj::StringPtr> contentType;
-  KJ_IF_MAYBE(opts, options) {
-    KJ_IF_MAYBE(type, opts->contentType) {
-      contentType = *type;
-    }
-  }
 
+  kj::Maybe<kj::StringPtr> contentType = getContentType(options);
   kj::Array<kj::byte> serialized;
   kj::ArrayPtr<kj::byte> s2;
   auto headers = kj::HttpHeaders(context.getHeaderTable());
 
   KJ_IF_MAYBE(type, contentType) {
-    // TODO(now) switch on supported types, this assumes "raw" format for now
-    KJ_REQUIRE(body->IsArrayBuffer(), "expected array buffer");
-    jsg::BufferSource source(js, body);
-    s2 = source.asArrayPtr();
+    if (*type == "application/octet-stream") {
+      // TODO(now) user facing error message for type mismatch
+      KJ_REQUIRE(body->IsArrayBuffer(), "");
+      jsg::BufferSource source(js, body);
+      s2 = source.asArrayPtr();
+    } else {
+      KJ_FAIL_ASSERT("Content type ", *type, " not implemented yet");
+    }
 
     headers.set(kj::HttpHeaderId::CONTENT_TYPE, *type);
   } else {
@@ -67,6 +82,7 @@ kj::Promise<void> WorkerQueue::send(
   }).attach(kj::mv(client));
 };
 
+// TODO(now) support alternative formats in sendBatch
 kj::Promise<void> WorkerQueue::sendBatch(
     jsg::Sequence<MessageSendRequest> batch, v8::Isolate* isolate) {
   auto& context = IoContext::current();
