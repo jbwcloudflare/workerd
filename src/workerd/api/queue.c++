@@ -177,12 +177,15 @@ kj::Promise<void> WorkerQueue::sendBatch(
 };
 
 jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::StringPtr> maybeFormat) {
-  auto fmt = maybeFormat.orDefault("v8"_kj);
-  if (fmt == "v8") {
+  auto fmt = maybeFormat.orDefault("application/v8"_kj);
+  if (fmt == "application/v8") {
     return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
   }
-  if (fmt == "raw") {
+  if (fmt == "application/octet-stream") {
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
+  }
+  if (fmt == "text/plain") {
+    return jsg::Value(js.v8Isolate, js.wrapString(kj::str(kj::mv(body))));
   }
 
   KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
