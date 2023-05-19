@@ -31,7 +31,6 @@ kj::Promise<void> WorkerQueue::send(
 
   kj::Maybe<kj::StringPtr> contentType = getContentType(options);
   kj::Array<kj::byte> serialized;
-  kj::ArrayPtr<kj::byte> s2;
   auto headers = kj::HttpHeaders(context.getHeaderTable());
 
   KJ_IF_MAYBE(type, contentType) {
@@ -39,7 +38,7 @@ kj::Promise<void> WorkerQueue::send(
       // TODO(now) user facing error message for type mismatch
       KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
       jsg::BufferSource source(js, body);
-      s2 = source.asArrayPtr();
+      serialized = kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
     } else {
       KJ_FAIL_ASSERT("Content type ", *type, " not implemented yet");
     }
@@ -54,7 +53,6 @@ kj::Promise<void> WorkerQueue::send(
     });
     serializer.write(body);
     serialized = serializer.release().data;
-    s2 = serialized;
 
     headers.set(kj::HttpHeaderId::CONTENT_TYPE, "application/octet-stream");
   }
