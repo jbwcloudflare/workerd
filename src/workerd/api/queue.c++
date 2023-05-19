@@ -37,7 +37,7 @@ kj::Promise<void> WorkerQueue::send(
   KJ_IF_MAYBE(type, contentType) {
     if (*type == "application/octet-stream") {
       // TODO(now) user facing error message for type mismatch
-      KJ_REQUIRE(body->IsArrayBuffer(), "");
+      KJ_REQUIRE(body->IsArrayBuffer() || body->IsInt8Array(), "invalid value");
       jsg::BufferSource source(js, body);
       s2 = source.asArrayPtr();
     } else {
