@@ -42,8 +42,9 @@ kj::Promise<void> WorkerQueue::send(
     } else if (*type == "text/plain") {
       // TODO(now) user facing error message for type mismatch
       KJ_REQUIRE(body->IsString(), "invalid value");
-      jsg::BufferSource source(js, body);
-      serialized = kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
+      auto val = jsg::Value(js.v8Isolate, body);
+      kj::String s = kj::str(val.getHandle(js.v8Isolate));
+      serialized = kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
     }
 
     else {
