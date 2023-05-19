@@ -39,7 +39,14 @@ kj::Promise<void> WorkerQueue::send(
       KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
       jsg::BufferSource source(js, body);
       serialized = kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
-    } else {
+    } else if (*type == "text/plain") {
+      // TODO(now) user facing error message for type mismatch
+      KJ_REQUIRE(body->IsString(), "invalid value");
+      jsg::BufferSource source(js, body);
+      serialized = kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
+    }
+
+    else {
       KJ_FAIL_ASSERT("Content type ", *type, " not implemented yet");
     }
 
