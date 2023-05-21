@@ -196,7 +196,8 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
       js.logWarning(kj::str("char: ", z));
     }
 
-    return jsg::Value(js.v8Isolate, js.wrapString(kj::str(kj::mv(body))));
+    auto q = kj::heapString(body.releaseAsChars());
+    return jsg::Value(js.v8Isolate, js.wrapString(q));
   }
 
   KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
