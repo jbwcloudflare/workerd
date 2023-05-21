@@ -185,6 +185,18 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
   if (fmt == "text/plain") {
+    js.logWarning("expect:");
+    auto x = kj::str("josh");
+    auto y = x.asBytes();
+    for (const auto & z : y) {
+      js.logWarning(kj::str("char: ", z));
+    }
+
+    js.logWarning("actual:");
+    for (const auto & z : body) {
+      js.logWarning(kj::str("char: ", z));
+    }
+
     return jsg::Value(js.v8Isolate, js.wrapString(kj::str(kj::mv(body))));
   }
 
