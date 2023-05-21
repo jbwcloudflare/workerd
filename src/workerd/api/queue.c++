@@ -43,7 +43,7 @@ kj::Promise<void> WorkerQueue::send(
       // TODO(now) user facing error message for type mismatch
       KJ_REQUIRE(body->IsString(), "invalid value");
       kj::String s = js.toString(body);
-      serialized = s.releaseArray().releaseAsBytes();
+      serialized = kj::heapArray<kj::byte>(s.asBytes());
     }
 
     else {
