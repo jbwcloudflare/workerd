@@ -10,10 +10,10 @@ namespace workerd::api {
 kj::Maybe<kj::StringPtr> getContentType(const kj::Maybe<WorkerQueue::SendOptions>& options) {
   KJ_IF_MAYBE(opts, options) {
     KJ_IF_MAYBE(contentType, opts->contentType) {
+      // TODO(soon) add application/json support
       auto validTypes = std::set<kj::StringPtr>{
         "text/plain"_kj,
         "application/octet-stream"_kj,
-        "application/json"_kj,
         "application/v8"_kj,
       };
       JSG_REQUIRE(validTypes.contains(*contentType), TypeError, kj::str("Unsupported queue message content type: ",  *contentType));
@@ -38,13 +38,12 @@ kj::Promise<void> WorkerQueue::send(
       // TODO(now) user facing error message for type mismatch
       KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
       jsg::BufferSource source(js, body);
-      serialized = kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
+      serialized = kj::heapArray<kj::byte>(kj::mv(source));
     } else if (*type == "text/plain") {
       // TODO(now) user facing error message for type mismatch
       KJ_REQUIRE(body->IsString(), "invalid value");
-      auto val = jsg::Value(js.v8Isolate, body);
-      kj::String s = kj::str(val.getHandle(js.v8Isolate));
-      serialized = kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
+      kj::String s = js.toString(body);
+      serialized = s.releaseArray().releaseAsBytes();
     }
 
     else {
@@ -185,9 +184,8 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
   if (fmt == "text/plain") {
-    return jsg::Value(js.v8Isolate, js.wrapString("test"_kj));
+    return jsg::Value(js.v8Isolate, js.wrapString(kj::str(kj::mv(body))));
 
-    //return jsg::Value(js.v8Isolate, js.wrapString(kj::str(kj::mv(body))));
   }
 
   KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
