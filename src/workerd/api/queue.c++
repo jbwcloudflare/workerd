@@ -154,13 +154,15 @@ kj::Promise<void> WorkerQueue::sendBatch(
     // eliminate a lot of data copying (whereas now encodeBase64 allocates a new buffer of its own
     // to hold its result, which we then have to copy into bodyBuilder).
     bodyBuilder.addAll(kj::encodeBase64(serializedBodies[i].body));
+    bodyBuilder.add('"');
 
     KJ_IF_MAYBE(contentType, serializedBodies[i].contentType) {
       bodyBuilder.addAll(",\"contentType\":\""_kj);
       bodyBuilder.addAll(*contentType);
       bodyBuilder.add('"');
     }
-    bodyBuilder.addAll("\"}"_kj);
+
+    bodyBuilder.addAll("}"_kj);
     if (i < messageCount - 1) {
       bodyBuilder.add(',');
     }
