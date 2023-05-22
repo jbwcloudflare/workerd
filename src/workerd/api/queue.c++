@@ -184,7 +184,7 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
   if (fmt == "application/json") {
-    kj::StringPtr q(body.asChars().begin(), body.size());
+    auto q = kj::heapString(body.asChars());
     return js.parseJson(q);
   }
   if (fmt == "text/plain") {
