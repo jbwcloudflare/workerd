@@ -47,7 +47,7 @@ public:
     jsg::Optional<kj::String> contentType;
     // contentType determines the serialization format of the message.
 
-    JSG_STRUCT(body);
+    JSG_STRUCT(body, contentType);
     JSG_STRUCT_TS_OVERRIDE(MessageSendRequest<Body = unknown> {
       body: Body;
       contentType?: string;
