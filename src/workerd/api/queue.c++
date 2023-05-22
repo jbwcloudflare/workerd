@@ -41,9 +41,9 @@ kj::Array<kj::byte> serialize(jsg::Lock& js, v8::Local<v8::Value> body, kj::Stri
       body->IsString(),
       TypeError,
       kj::str(
-        "Content Type",
+        "Content Type \"",
         IncomingQueueMessage::ContentType::TEXT,
-        "requires a value of type string, but received: ",
+        "\" requires a value of type string, but received: ",
         body->TypeOf(js.v8Isolate)
       )
     );
@@ -53,12 +53,12 @@ kj::Array<kj::byte> serialize(jsg::Lock& js, v8::Local<v8::Value> body, kj::Stri
   }
   if (contentType == IncomingQueueMessage::ContentType::OCTET_STREAM) {
     JSG_REQUIRE(
-      body->IsString(),
+      body->IsArrayBuffer() || body->IsUint8Array(),
       TypeError,
       kj::str(
-        "Content Type",
+        "Content Type \"",
         IncomingQueueMessage::ContentType::OCTET_STREAM,
-        "requires a value of type ArrayBuffer or Uint8Array, but received: ",
+        "\" requires a value of type ArrayBuffer or Uint8Array, but received: ",
         body->TypeOf(js.v8Isolate)
       )
     );
