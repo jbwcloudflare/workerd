@@ -7,20 +7,56 @@
 
 namespace workerd::api {
 
-kj::Maybe<kj::StringPtr> getContentType(const kj::Maybe<WorkerQueue::SendOptions>& options) {
-  KJ_IF_MAYBE(opts, options) {
-    KJ_IF_MAYBE(contentType, opts->contentType) {
-      auto validTypes = std::set<kj::StringPtr>{
-        "text/plain"_kj,
-        "application/octet-stream"_kj,
-        "application/json"_kj,
-        "application/v8"_kj,
-      };
-      JSG_REQUIRE(validTypes.contains(*contentType), TypeError, kj::str("Unsupported queue message content type: ",  *contentType));
-      return kj::StringPtr(*contentType);
-    }
+kj::StringPtr validateContentType(kj::StringPtr contentType) {
+  if (contentType == IncomingQueueMessage::ContentType::TEXT) {
+    return IncomingQueueMessage::ContentType::TEXT;
   }
-  return nullptr;
+  if (contentType == IncomingQueueMessage::ContentType::OCTET_STREAM) {
+    return IncomingQueueMessage::ContentType::OCTET_STREAM;
+  }
+  if (contentType == IncomingQueueMessage::ContentType::JSON) {
+    return IncomingQueueMessage::ContentType::JSON;
+  }
+  if (contentType == IncomingQueueMessage::ContentType::V8) {
+    return IncomingQueueMessage::ContentType::V8;
+  }
+
+  JSG_FAIL_REQUIRE(TypeError, kj::str("Unsupported queue message content type: ", contentType));
+}
+
+kj::Array<kj::byte> serializeV8(jsg::Lock& js, v8::Local<v8::Value> body) {
+  // Use a specific serialization version to avoid sending messages using a new version before all
+  // runtimes at the edge know how to read it.
+  jsg::Serializer serializer(js.v8Isolate, jsg::Serializer::Options {
+    .version = 15,
+    .omitHeader = false,
+  });
+  serializer.write(body);
+  return serializer.release().data;
+}
+
+kj::Array<kj::byte> serialize(jsg::Lock& js, v8::Local<v8::Value> body, kj::StringPtr contentType) {
+  if (contentType == IncomingQueueMessage::ContentType::OCTET_STREAM) {
+    // TODO(now) user facing error message for type mismatch
+    KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
+    jsg::BufferSource source(js, body);
+    return kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
+  }
+  if (contentType == IncomingQueueMessage::ContentType::TEXT) {
+    // TODO(now) user facing error message for type mismatch
+    KJ_REQUIRE(body->IsString(), "invalid value");
+    kj::String s = js.toString(body);
+    return kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
+  }
+  if (contentType == IncomingQueueMessage::ContentType::JSON) {
+    kj::String s = js.serializeJson(body);
+    return kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
+  }
+  if (contentType == IncomingQueueMessage::ContentType::V8) {
+    return serializeV8(js, body);
+  }
+
+  KJ_FAIL_REQUIRE(kj::str("unexpected content type: ", contentType));
 }
 
 kj::Promise<void> WorkerQueue::send(
@@ -29,43 +65,23 @@ kj::Promise<void> WorkerQueue::send(
 
   JSG_REQUIRE(!body->IsUndefined(), TypeError, "Message body cannot be undefined");
 
-  kj::Maybe<kj::StringPtr> contentType = getContentType(options);
-  kj::Array<kj::byte> serialized;
+  kj::Maybe<kj::StringPtr> contentType;
+  KJ_IF_MAYBE(opts, options) {
+    KJ_IF_MAYBE(type, opts->contentType) {
+      contentType = validateContentType(*type);
+    }
+  }
+
   auto headers = kj::HttpHeaders(context.getHeaderTable());
-
+  kj::Array<kj::byte> serialized;
   KJ_IF_MAYBE(type, contentType) {
-    // TODO(now) v8 support
-    if (*type == "application/octet-stream") {
-      // TODO(now) user facing error message for type mismatch
-      KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
-      jsg::BufferSource source(js, body);
-      serialized = kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
-    } else if (*type == "text/plain") {
-      // TODO(now) user facing error message for type mismatch
-      KJ_REQUIRE(body->IsString(), "invalid value");
-      kj::String s = js.toString(body);
-      serialized = kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
-    } else if (*type == "application/json") {
-      kj::String s = js.serializeJson(body);
-      serialized = kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
-    }
-    else {
-      KJ_FAIL_ASSERT("Content type ", *type, " not implemented yet");
-    }
-
+    // TODO(now) additional header to toggle on new behavior?
     headers.set(kj::HttpHeaderId::CONTENT_TYPE, *type);
+    serialized = serialize(js, body, *type);
   } else {
-    // Use a specific serialization version to avoid sending messages using a new version before all
-    // runtimes at the edge know how to read it.
-    jsg::Serializer serializer(js.v8Isolate, jsg::Serializer::Options {
-      .version = 15,
-      .omitHeader = false,
-    });
-    serializer.write(body);
-    serialized = serializer.release().data;
-
-    // TODO(now) send v8 format, with new header to distinguish
+    // TODO(cleanup) use new content type (application/v8) by default
     headers.set(kj::HttpHeaderId::CONTENT_TYPE, "application/octet-stream");
+    serialized = serializeV8(js, body);
   }
 
   // The stage that we're sending a subrequest to provides a base URL that includes a scheme, the
@@ -211,7 +227,7 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
 }
 
 jsg::Value deserialize(jsg::Lock& js, rpc::QueueMessage::Reader message) {
-  auto fmt = message.getFormat();
+  auto fmt = message.getContentType();
   if (fmt == "" || fmt == "v8") {
     // Default (empty string) implies v8 format
     return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, message.getData()).readValue());
@@ -237,7 +253,7 @@ QueueMessage::QueueMessage(
     jsg::Lock& js, IncomingQueueMessage message, IoPtr<QueueEventResult> result)
     : id(kj::mv(message.id)),
       timestamp(message.timestamp),
-      body(deserialize(js, kj::mv(message.body), message.format)),
+      body(deserialize(js, kj::mv(message.body), message.contentType)),
       result(result) {}
 
 kj::OneOf<jsg::Value, kj::String> QueueMessage::getBody(jsg::Lock& js) {

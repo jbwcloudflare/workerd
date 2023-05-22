@@ -32,7 +32,6 @@ public:
 
     jsg::Optional<kj::String> contentType;
     // contentType determines the serialization format of the message.
-    // TODO(now) validate type is supported at construction.
 
     JSG_STRUCT(contentType);
     JSG_STRUCT_TS_OVERRIDE(QueueSendOptions {
@@ -47,7 +46,6 @@ public:
 
     jsg::Optional<kj::String> contentType;
     // contentType determines the serialization format of the message.
-    // TODO(now) validate type is supported at construction.
 
     JSG_STRUCT(body);
     JSG_STRUCT_TS_OVERRIDE(MessageSendRequest<Body = unknown> {
@@ -85,8 +83,15 @@ struct IncomingQueueMessage {
   kj::String id;
   kj::Date timestamp;
   kj::Array<kj::byte> body;
-  kj::Maybe<kj::String> format;
-  JSG_STRUCT(id, timestamp, body, format);
+  kj::Maybe<kj::String> contentType;
+  JSG_STRUCT(id, timestamp, body, contentType);
+
+  struct ContentType {
+    static constexpr kj::StringPtr TEXT = "text/plain"_kj;
+    static constexpr kj::StringPtr OCTET_STREAM = "application/octet-stream"_kj;
+    static constexpr kj::StringPtr JSON = "application/json"_kj;
+    static constexpr kj::StringPtr V8 = "application/v8"_kj;
+  };
 };
 
 struct QueueResponse {
