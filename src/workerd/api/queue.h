@@ -119,7 +119,7 @@ public:
 
   kj::StringPtr getId() { return id; }
   kj::Date getTimestamp() { return timestamp; }
-  kj::OneOf<jsg::Value, kj::String> getBody(jsg::Lock& js);
+  jsg::Value getBody(jsg::Lock& js);
 
   void retry();
   void ack();

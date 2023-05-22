@@ -256,7 +256,7 @@ QueueMessage::QueueMessage(
       body(deserialize(js, kj::mv(message.body), message.contentType)),
       result(result) {}
 
-kj::OneOf<jsg::Value, kj::String> QueueMessage::getBody(jsg::Lock& js) {
+jsg::Value QueueMessage::getBody(jsg::Lock& js) {
   return body.addRef(js);
 }
 
