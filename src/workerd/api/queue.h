@@ -58,7 +58,7 @@ public:
   kj::Promise<void> send(
       jsg::Lock& js, v8::Local<v8::Value> body, jsg::Optional<SendOptions> options);
 
-  kj::Promise<void> sendBatch(jsg::Sequence<MessageSendRequest> batch, v8::Isolate* isolate);
+  kj::Promise<void> sendBatch(jsg::Lock& js, jsg::Sequence<MessageSendRequest> batch);
 
   JSG_RESOURCE_TYPE(WorkerQueue) {
     JSG_METHOD(send);

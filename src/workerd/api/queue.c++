@@ -108,8 +108,13 @@ kj::Promise<void> WorkerQueue::send(
 };
 
 // TODO(now) support alternative formats in sendBatch
+struct SerializedBody {
+  kj::Array<kj::byte> body;
+  kj::Maybe<kj::StringPtr> contentType;
+};
+
 kj::Promise<void> WorkerQueue::sendBatch(
-    jsg::Sequence<MessageSendRequest> batch, v8::Isolate* isolate) {
+    jsg::Lock& js, jsg::Sequence<MessageSendRequest> batch) {
   auto& context = IoContext::current();
 
   JSG_REQUIRE(batch.size() > 0, TypeError, "sendBatch() requires at least one message");
@@ -117,23 +122,23 @@ kj::Promise<void> WorkerQueue::sendBatch(
   size_t totalSize = 0;
   size_t largestMessage = 0;
   auto messageCount = batch.size();
-  auto builder = kj::heapArrayBuilder<kj::Array<byte>>(messageCount);
+  auto builder = kj::heapArrayBuilder<SerializedBody>(messageCount);
   for (auto& message: batch) {
-    JSG_REQUIRE(!message.body.getHandle(isolate)->IsUndefined(), TypeError,
+    JSG_REQUIRE(!message.body.getHandle(js)->IsUndefined(), TypeError,
         "Message body cannot be undefined");
 
-    // Use a specific serialization version to avoid sending messages using a new version before all
-    // runtimes at the edge know how to read it.
-    // TODO(perf): Would we be better off just serializing all the messages together in one big
-    // buffer rather than separately?
-    jsg::Serializer serializer(isolate, jsg::Serializer::Options {
-      .version = 15,
-      .omitHeader = false,
-    });
-    serializer.write(kj::mv(message.body));
-    builder.add(serializer.release().data);
-    totalSize += builder.back().size();
-    largestMessage = kj::max(largestMessage, builder.back().size());
+    SerializedBody item;
+    KJ_IF_MAYBE(contentType, message.contentType) {
+      item.contentType = validateContentType(*contentType);
+      item.body = serialize(js, message.body.getHandle(js), *contentType);
+    } else {
+      item.body = serializeV8(js, message.body.getHandle(js));
+    }
+
+
+    builder.add(kj::mv(item));
+    totalSize += builder.back().body.size();
+    largestMessage = kj::max(largestMessage, builder.back().body.size());
   }
   auto serializedBodies = builder.finish();
 
@@ -148,7 +153,13 @@ kj::Promise<void> WorkerQueue::sendBatch(
     // TODO(perf): We should be able to encode the data directly into bodyBuilder's buffer to
     // eliminate a lot of data copying (whereas now encodeBase64 allocates a new buffer of its own
     // to hold its result, which we then have to copy into bodyBuilder).
-    bodyBuilder.addAll(kj::encodeBase64(serializedBodies[i]));
+    bodyBuilder.addAll(kj::encodeBase64(serializedBodies[i].body));
+
+    KJ_IF_MAYBE(contentType, serializedBodies[i].contentType) {
+      bodyBuilder.addAll(",\"contentType\":\""_kj);
+      bodyBuilder.addAll(*contentType);
+      bodyBuilder.add('"');
+    }
     bodyBuilder.addAll("\"}"_kj);
     if (i < messageCount - 1) {
       bodyBuilder.add(',');
@@ -159,7 +170,7 @@ kj::Promise<void> WorkerQueue::sendBatch(
   KJ_DASSERT(bodyBuilder.size() <= estimatedSize);
   kj::String body(bodyBuilder.releaseAsArray());
   KJ_DASSERT(jsg::check(
-        v8::JSON::Parse(isolate->GetCurrentContext(), jsg::v8Str(isolate, body)))->IsObject());
+        v8::JSON::Parse(js.v8Isolate->GetCurrentContext(), jsg::v8Str(js.v8Isolate, body)))->IsObject());
 
   auto client = context.getHttpClient(subrequestChannel, true, nullptr, "queue_send"_kj);
 
