@@ -129,6 +129,7 @@ kj::Promise<void> WorkerQueue::sendBatch(
 
     SerializedBody item;
     KJ_IF_MAYBE(contentType, message.contentType) {
+      js.logWarning("added type");
       item.contentType = validateContentType(*contentType);
       item.body = serialize(js, message.body.getHandle(js), *contentType);
     } else {
@@ -157,6 +158,7 @@ kj::Promise<void> WorkerQueue::sendBatch(
     bodyBuilder.add('"');
 
     KJ_IF_MAYBE(contentType, serializedBodies[i].contentType) {
+      js.logWarning("serialized type");
       bodyBuilder.addAll(",\"contentType\":\""_kj);
       bodyBuilder.addAll(*contentType);
       bodyBuilder.add('"');
