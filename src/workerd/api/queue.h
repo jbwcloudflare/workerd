@@ -35,7 +35,7 @@ public:
 
     JSG_STRUCT(contentType);
     JSG_STRUCT_TS_OVERRIDE(QueueSendOptions {
-      body: Body;
+      tmp: never
     });
     // NOTE: Any new fields added here should also be added to MessageSendRequest below.
   };
