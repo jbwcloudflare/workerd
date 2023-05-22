@@ -195,49 +195,51 @@ kj::Promise<void> WorkerQueue::sendBatch(
   }).attach(kj::mv(client));
 };
 
-jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::StringPtr> maybeFormat) {
-  auto fmt = maybeFormat.orDefault("application/v8"_kj);
-  if (fmt == "application/v8") {
-    return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
+jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::StringPtr> contentType) {
+  auto type = contentType.orDefault(IncomingQueueMessage::ContentType::V8);
+
+  if (type == IncomingQueueMessage::ContentType::TEXT) {
+    auto str = kj::heapString(body.asChars());
+    return jsg::Value(js.v8Isolate, js.wrapString(str));
   }
-  if (fmt == "application/octet-stream") {
+  if (type == IncomingQueueMessage::ContentType::OCTET_STREAM) {
     return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(body)));
   }
-  if (fmt == "application/json") {
-    auto q = kj::heapString(body.asChars());
-    return js.parseJson(q);
+  if (type == IncomingQueueMessage::ContentType::JSON) {
+    auto str = kj::heapString(body.asChars());
+    return js.parseJson(str);
   }
-  if (fmt == "text/plain") {
-    js.logWarning("expect:");
-    auto x = kj::str("josh");
-    auto y = x.asBytes();
-    for (const auto & z : y) {
-      js.logWarning(kj::str("char: ", z));
-    }
-
-    js.logWarning("actual:");
-    for (const auto & z : body) {
-      js.logWarning(kj::str("char: ", z));
-    }
-    auto q = kj::heapString(body.asChars());
-    return jsg::Value(js.v8Isolate, js.wrapString(q));
+  if (type == IncomingQueueMessage::ContentType::V8) {
+    return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
   }
 
-  KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
+  KJ_FAIL_ASSERT("unexpected queue message content type: ", contentType);
 }
 
 jsg::Value deserialize(jsg::Lock& js, rpc::QueueMessage::Reader message) {
-  auto fmt = message.getContentType();
-  if (fmt == "" || fmt == "v8") {
-    // Default (empty string) implies v8 format
-    return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, message.getData()).readValue());
-  }
-  if (fmt == "raw") {
-    auto bytes = kj::heapArray(message.getData().asBytes());
-    return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(bytes)));
+  kj::StringPtr type = message.getContentType();
+  if (type == "") {
+    // default to v8 format
+    type = IncomingQueueMessage::ContentType::V8;
   }
 
-  KJ_FAIL_ASSERT("unexpected queue message format: ", fmt);
+  if (type == IncomingQueueMessage::ContentType::TEXT) {
+    auto str = kj::heapString(message.getData().asChars());
+    return jsg::Value(js.v8Isolate, js.wrapString(str));
+  }
+  if (type == IncomingQueueMessage::ContentType::OCTET_STREAM) {
+    kj::Array<kj::byte> bytes = kj::heapArray(message.getData().asBytes());
+    return jsg::Value(js.v8Isolate, js.wrapBytes(kj::mv(bytes)));
+  }
+  if (type == IncomingQueueMessage::ContentType::JSON) {
+    auto str = kj::heapString(message.getData().asChars());
+    return js.parseJson(str);
+  }
+  if (type == IncomingQueueMessage::ContentType::V8) {
+    return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, message.getData()).readValue());
+  }
+
+  KJ_FAIL_ASSERT(kj::str("unexpected queue message content type: ", type));
 }
 
 QueueMessage::QueueMessage(
