@@ -173,6 +173,7 @@ kj::Promise<void> WorkerQueue::sendBatch(
   bodyBuilder.add('\0');
   KJ_DASSERT(bodyBuilder.size() <= estimatedSize);
   kj::String body(bodyBuilder.releaseAsArray());
+  js.logWarning(kj::str("josh body is: ", body));
   KJ_DASSERT(jsg::check(
         v8::JSON::Parse(js.v8Isolate->GetCurrentContext(), jsg::v8Str(js.v8Isolate, body)))->IsObject());
 
