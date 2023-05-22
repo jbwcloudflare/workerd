@@ -199,8 +199,7 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
     for (const auto & z : body) {
       js.logWarning(kj::str("char: ", z));
     }
-
-    kj::StringPtr q(body.asChars().begin(), body.size());
+    auto q = kj::heapString(body.asChars());
     return jsg::Value(js.v8Isolate, js.wrapString(q));
   }
 
