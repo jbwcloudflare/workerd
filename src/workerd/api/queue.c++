@@ -213,7 +213,7 @@ jsg::Value deserialize(jsg::Lock& js, kj::Array<kj::byte> body, kj::Maybe<kj::St
     return jsg::Value(js.v8Isolate, jsg::Deserializer(js.v8Isolate, kj::mv(body)).readValue());
   }
 
-  KJ_FAIL_ASSERT(kj::str("unexpected queue message content type: ", contentType));
+  KJ_FAIL_ASSERT(kj::str("unexpected queue message content type: ", type));
 }
 
 jsg::Value deserialize(jsg::Lock& js, rpc::QueueMessage::Reader message) {
