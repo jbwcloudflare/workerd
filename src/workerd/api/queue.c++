@@ -137,7 +137,7 @@ kj::Promise<void> WorkerQueue::sendBatch(
 
 
     builder.add(kj::mv(item));
-    totalSize += builder.back().body.size();
+    totalSize += builder.back().body.size() + builder.back().contentType.orDefault("").size();
     largestMessage = kj::max(largestMessage, builder.back().body.size());
   }
   auto serializedBodies = builder.finish();
