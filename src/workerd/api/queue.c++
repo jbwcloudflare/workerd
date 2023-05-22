@@ -34,6 +34,7 @@ kj::Promise<void> WorkerQueue::send(
   auto headers = kj::HttpHeaders(context.getHeaderTable());
 
   KJ_IF_MAYBE(type, contentType) {
+    // TODO(now) v8 support
     if (*type == "application/octet-stream") {
       // TODO(now) user facing error message for type mismatch
       KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
@@ -44,8 +45,10 @@ kj::Promise<void> WorkerQueue::send(
       KJ_REQUIRE(body->IsString(), "invalid value");
       kj::String s = js.toString(body);
       serialized = kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
+    } else if (*type == "application/json") {
+      kj::String s = js.serializeJson(body);
+      serialized = kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
     }
-
     else {
       KJ_FAIL_ASSERT("Content type ", *type, " not implemented yet");
     }
@@ -61,6 +64,7 @@ kj::Promise<void> WorkerQueue::send(
     serializer.write(body);
     serialized = serializer.release().data;
 
+    // TODO(now) send v8 format, with new header to distinguish
     headers.set(kj::HttpHeaderId::CONTENT_TYPE, "application/octet-stream");
   }
 
