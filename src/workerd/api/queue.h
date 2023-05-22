@@ -36,7 +36,6 @@ public:
     JSG_STRUCT(contentType);
     JSG_STRUCT_TS_OVERRIDE(QueueSendOptions {
       body: Body;
-      contentType?: string;
     });
     // NOTE: Any new fields added here should also be added to MessageSendRequest below.
   };
@@ -50,7 +49,6 @@ public:
     JSG_STRUCT(body, contentType);
     JSG_STRUCT_TS_OVERRIDE(MessageSendRequest<Body = unknown> {
       body: Body;
-      contentType?: string;
     });
     // NOTE: Any new fields added to SendOptions must also be added here.
   };

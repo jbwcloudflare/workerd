@@ -36,21 +36,39 @@ kj::Array<kj::byte> serializeV8(jsg::Lock& js, v8::Local<v8::Value> body) {
 }
 
 kj::Array<kj::byte> serialize(jsg::Lock& js, v8::Local<v8::Value> body, kj::StringPtr contentType) {
-  if (contentType == IncomingQueueMessage::ContentType::OCTET_STREAM) {
-    // TODO(now) user facing error message for type mismatch
-    KJ_REQUIRE(body->IsArrayBuffer() || body->IsUint8Array(), "invalid value");
-    jsg::BufferSource source(js, body);
-    return kj::heapArray(source.asArrayPtr()); // TODO(now) avoid this copy?
-  }
   if (contentType == IncomingQueueMessage::ContentType::TEXT) {
-    // TODO(now) user facing error message for type mismatch
-    KJ_REQUIRE(body->IsString(), "invalid value");
+    JSG_REQUIRE(
+      body->IsString(),
+      TypeError,
+      kj::str(
+        "Content Type",
+        IncomingQueueMessage::ContentType::TEXT,
+        "requires a value of type string, but received: ",
+        body->TypeOf(js.v8Isolate)
+      )
+    );
+
     kj::String s = js.toString(body);
-    return kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
+    return kj::heapArray(s.asBytes());
+  }
+  if (contentType == IncomingQueueMessage::ContentType::OCTET_STREAM) {
+    JSG_REQUIRE(
+      body->IsString(),
+      TypeError,
+      kj::str(
+        "Content Type",
+        IncomingQueueMessage::ContentType::OCTET_STREAM,
+        "requires a value of type ArrayBuffer or Uint8Array, but received: ",
+        body->TypeOf(js.v8Isolate)
+      )
+    );
+
+    jsg::BufferSource source(js, body);
+    return kj::heapArray(source.asArrayPtr());
   }
   if (contentType == IncomingQueueMessage::ContentType::JSON) {
     kj::String s = js.serializeJson(body);
-    return kj::heapArray(s.asBytes()); // TODO(now) lotta copies...
+    return kj::heapArray(s.asBytes());
   }
   if (contentType == IncomingQueueMessage::ContentType::V8) {
     return serializeV8(js, body);
@@ -173,7 +191,6 @@ kj::Promise<void> WorkerQueue::sendBatch(
   bodyBuilder.add('\0');
   KJ_DASSERT(bodyBuilder.size() <= estimatedSize);
   kj::String body(bodyBuilder.releaseAsArray());
-  js.logWarning(kj::str("josh body is: ", body));
   KJ_DASSERT(jsg::check(
         v8::JSON::Parse(js.v8Isolate->GetCurrentContext(), jsg::v8Str(js.v8Isolate, body)))->IsObject());
 
